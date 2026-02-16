@@ -1,0 +1,19 @@
+bot/
+│
+├── main.py
+│
+├── handlers/
+│   ├── start.py
+│   ├── bottom_menu.py
+│   ├── inline_router.py
+│   └── pagination.py
+│
+├── keyboards/
+│   ├── reply.py
+│   ├── inline_main.py
+│   ├── inline_buy.py
+│   └── inline_sell.py
+│
+└── utils/
+    ├── state.py
+    └── db.py
