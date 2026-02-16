@@ -3,17 +3,20 @@ bot/
 ├── main.py
 │
 ├── handlers/
+│   ├── __init__.py
 │   ├── start.py
 │   ├── bottom_menu.py
 │   ├── inline_router.py
 │   └── pagination.py
 │
 ├── keyboards/
+│   ├── __init__.py
 │   ├── reply.py
 │   ├── inline_main.py
 │   ├── inline_buy.py
 │   └── inline_sell.py
 │
 └── utils/
+    ├── __init__.py
     ├── state.py
     └── db.py
