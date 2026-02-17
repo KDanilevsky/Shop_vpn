@@ -8,12 +8,16 @@ from handlers.inline_router import inline_router
 from handlers.shop import show_products
 
 # OPTIONAL DB INIT
-from utils.init_db import init_db
+from utils.init_db import init_db, drop_db
 
 
 async def main():
+    # Uncomment to DROP all tables
+    await drop_db()
+
+
     # Uncomment this line to create tables
-    # await init_db()
+    await init_db()
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
