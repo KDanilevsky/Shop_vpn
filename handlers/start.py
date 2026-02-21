@@ -14,7 +14,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Send welcome message with bottom menu (ReplyKeyboard)
     await update.message.reply_text(
         "Welcome! Use the bottom menu to navigate:",
-        reply_markup=bottom_menu()
+        reply_markup=bottom_menu(update, context)
     )
 
     # Send main inline menu (InlineKeyboard)

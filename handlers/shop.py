@@ -1,19 +1,24 @@
 from telegram import Update
-from telegram.ext import ContextTypes
-from sqlalchemy import select
-
-from utils.db import SessionLocal
+from telegram.ext import ContextTypes, CommandHandler
 from utils.models import Product
 
 
-async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with SessionLocal() as session:
-        result = await session.execute(select(Product))
-        products = result.scalars().all()
+def register_shop_handlers(app, SessionLocal):
 
-    if not products:
-        await update.message.reply_text("No products available.")
-        return
+    async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        async with SessionLocal() as session:
+            result = await session.execute(Product.__table__.select())
+            products = result.fetchall()
 
-    text = "\n".join(f"{p.id}. {p.name} — {p.price}$" for p in products)
-    await update.message.reply_text(text)
+        if not products:
+            await update.message.reply_text("No products available.")
+            return
+
+        text = "Available products:\n\n"
+        for p in products:
+            text += f"• {p.name} — {p.price} USDT\n"
+
+        await update.message.reply_text(text)
+
+    app.add_handler(CommandHandler("shop", show_products))
+

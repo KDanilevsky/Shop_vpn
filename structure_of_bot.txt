@@ -13,6 +13,13 @@ bot/
 │   ├── reply.py
 │   └── inline_shop.py
 │
+├── assets/
+│   ├── wallet.jpg
+│   ├── topup.jpg
+│   ├── settings.jpg
+│   ├── admin.jpg
+│   └── share.jpg
+│
 └── utils/
     ├── db.py
     ├── models.py
