@@ -1,6 +1,10 @@
 import asyncio
-from utils.models import Base
+from db.models import Base
 from concurrent.futures import TimeoutError
+from db.async_db import engine
+from db.async_db import SessionLocal
+from db.crud import create_admin
+from utils.settings_bootstrap import bootstrap_settings
 
 
 async def _init_db_async(engine):
@@ -29,6 +33,11 @@ def run_db_tasks(engine, loop=None, timeout=None):
         await _drop_db_async(engine)
         await _init_db_async(engine)
 
+        # Initialize settings BEFORE creating admin
+        await bootstrap_settings()
+
+        await create_admin()
+
     try:
         running = asyncio.get_running_loop()
     except RuntimeError:
@@ -41,4 +50,3 @@ def run_db_tasks(engine, loop=None, timeout=None):
         future = asyncio.run_coroutine_threadsafe(_recreate(), loop)
         return future.result(timeout)
     return asyncio.run(_recreate())
-

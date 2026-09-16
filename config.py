@@ -7,6 +7,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 PAYMENT_PROVIDER_TOKEN = os.getenv('PAYMENT_PROVIDER_TOKEN')
 
 DATABASE_URL_PG = os.getenv('DATABASE_URL_PG')
+DATABASE_URL_PG_PG = os.getenv('DATABASE_URL_PG_PG')
 DATABASE_FILENAME = os.getenv('DATABASE_FILENAME')
 
 TG_VPN_SHOP_BOT_ID = int(os.getenv('TG_VPN_SHOP_BOT_ID'))
@@ -74,6 +75,19 @@ UNBLOCKID = 18
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Assets folder
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+QRCODES_DIR = os.path.join(BASE_DIR, "qrcodes")
 
 ADMINS_LIST = []
 ADMINS_LIST.append(FIRST_USER_IN_DB)
+
+SUBS_PERIOD_DAYS = None  # Set to None for no limit, or an integer for a fixed subscription period in days
+
+MAX_SUBSCRIPTION_SLOTS = 5  # Maximum number of subscription slots per user
+
+MAXIMUM_FRIENDLY_ACCOUNTS = 5  # Maximum number of friendly accounts a user can have
+
+ADMIN_ROLES = {
+    # telegram_id: role
+    362141454: "OWNER",
+    # 987654321: "ADMIN",
+}

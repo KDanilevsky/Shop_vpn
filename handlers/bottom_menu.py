@@ -5,7 +5,9 @@ from handlers.wallet import wallet_handler
 from handlers.topup import topup_handler
 from handlers.about import about_handler
 from handlers.settings import settings_handler
-from handlers.admin import admin_handler
+# from handlers.admin import admin_handler
+from handlers.admin.entry import admin_handler
+
 from handlers.share import share_handler
 from handlers.help import help_handler
 

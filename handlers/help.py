@@ -83,6 +83,8 @@ async def send_mes_adm(update, context):
 
 async def enter_mess_adm(update, context):
     bot = context.bot
+    text = None
+    # if update.message:
     text = (
         'Сообщение администратору:'
         f'from user: id: {update.message.from_user.id} \n'

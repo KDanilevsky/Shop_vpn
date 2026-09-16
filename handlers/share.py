@@ -8,6 +8,28 @@ from keyboards.share_kb import share_keyboard
 from config import ASSETS_DIR, BOT_SHOP_NAME
 
 
+async def _safe_edit(message, text, keyboard):
+    """Safely edit a message, falling back to sending a new one."""
+    try:
+        if message.caption:
+            await message.edit_caption(
+                caption=text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="html",
+            )
+        else:
+            await message.edit_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="html",
+            )
+    except Exception:
+        await message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="html",
+        )
+
 async def share_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_path = os.path.join(ASSETS_DIR, "share.jpg")
     reply_markup = share_keyboard()
@@ -43,17 +65,46 @@ async def share_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #         reply_markup=share_keyboard()
 #     )
 
+
 async def referal_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    bot = context.bot
-    cont = str(update.from_user.id)
-    url = helpers.create_deep_linked_url(bot.username, str(cont), group=False)
+    query = update.callback_query
+    await query.answer()
+
+    async with SessionLocal() as session:
+        user = await session.get(AllUsers, query.from_user.id)
+        if not user:
+            await query.message.reply_text("Пользователь не найден.")
+            return
+
+        # token = await _get_or_create_payfor_token(session, user.user_id)
+        token = await get_or_create_secret_token(session, user.user_id, "invite", days=None) # metadata={"subs_id": subs_id} - можно сохранять в metadata любые данные, которые могут понадобиться при обработке токена (например, ID подписки для которой создается токен)
+
+    bot_username = context.bot.username
+    link = f"https://t.me/{bot_username}?start=invite_{token}"
+
     text = (
         f"\U0001F30E {BOT_SHOP_NAME} \U0001F525 \n"
-        "Бесплатный доступ в интернет без границ:\n"
-        "5 дней\n"
+        "Бесплатный доступ в интернет без границ:\n\n"
+        "2 дня\n"
+        f"<code>{link}</code>"
     )
+
     keyboard = [
-        [InlineKeyboardButton(text="\U0001F381 Получить", url=url)],
+        [InlineKeyboardButton("\U0001F381 Получить", url=link)],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+
+    await _safe_edit(query.message, text, keyboard)
+# async def referal_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#     bot = context.bot
+#     cont = str(update.from_user.id)
+#     url = helpers.create_deep_linked_url(bot.username, str(cont), group=False)
+#     text = (
+#         f"\U0001F30E {BOT_SHOP_NAME} \U0001F525 \n"
+#         "Бесплатный доступ в интернет без границ:\n"
+#         "5 дней\n"
+#     )
+#     keyboard = [
+#         [InlineKeyboardButton(text="\U0001F381 Получить", url=url)],
+#     ]
+#     reply_markup = InlineKeyboardMarkup(keyboard)
+#     await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")

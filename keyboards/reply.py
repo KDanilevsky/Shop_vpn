@@ -4,7 +4,8 @@ from config import ADMINS_LIST
 
 def bottom_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = None
-    if  update.message.from_user.id  in ADMINS_LIST or update.from_user.id  in ADMINS_LIST:
+    # if  update.message.from_user.id  in ADMINS_LIST or update.from_user.id  in ADMINS_LIST:
+    if  update.effective_user.id in ADMINS_LIST:
         keyboard = [
             ["💼 Аккаунт", "📊 Пополнение"],
             ["👤 О Сервисе", "🛠 Настройки"],

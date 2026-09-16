@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "http": "https://vpn1.example.com",
+    "username": "vault://secret/path#username",
+    "password": "vault://secret/path#password",
+    "token": "aws-sm://my-secret#token",
+    "ip": "1.2.3.4",
+    "max_subscriptions": 1000,
+    "all_subscriptions": 10,
+    "region": 1
+  }
+]

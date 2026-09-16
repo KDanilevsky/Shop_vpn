@@ -1456,6 +1456,7 @@ class AllInvoices(Base):
 class AllServers(Base):
     __tablename__ = 'all_servers'
     id = Column(Integer, primary_key=True)
+    server_id = Column(Integer, unique=True, nullable=False)
     country = Column(String, unique=False, nullable=True)
     country_id = Column(Integer, unique=False, nullable=False)
     max_subscriptions = Column(Integer, unique=False, nullable=False)
@@ -1754,17 +1755,7 @@ async def bitpappa_create_invoice(update: Update, context: ContextTypes.DEFAULT_
     if make_invoice is True:
         bitpapa_pay = BitpapaPay(api_token=PAYMENT_PROVIDER_TOKEN)
 
-        # quantity_guests_paid = session.query(AllUsers.quantity_guests_paid).filter_by(user_id=update.from_user.id).first()
-        # quantity_guests_paid = quantity_guests_paid[0]
-        
-        # print(quantity_guests_paid)
-        
-        # if quantity_guests_paid is not None:
-        #     counted_price = BASE_PRICE_IN_USDT * ((100 - (quantity_guests_paid * DISCOUNT_BASE_PROCENTS))/100)
-        #     if counted_price < 0:
-        #         counted_price = 0
-        # else:
-        #     counted_price = BASE_PRICE_IN_USDT
+
 
         price = context.user_data['counted_price_last']
         final_price = None
@@ -1776,8 +1767,7 @@ async def bitpappa_create_invoice(update: Update, context: ContextTypes.DEFAULT_
             final_price = price
             inv_price = price
         print(final_price)
-        
-        # print(context.user_data['counted_price_last'])
+ 
         result = await bitpapa_pay.create_invoice("USDT", final_price)
         print(result.model_dump())
         print(
@@ -1791,8 +1781,6 @@ async def bitpappa_create_invoice(update: Update, context: ContextTypes.DEFAULT_
         )
         json_string = jsonpickle.encode(result)
         await bitpapa_pay.close()
-        # print(update.message.from_user.name)
-        # print(update.from_user.name)
         invoice_db = AllInvoices(user_id=update.from_user.id, user_name=update.from_user.name, user_full_name=update.from_user.full_name,invoice_id=result.invoice.id,invoice_curency=result.invoice.currency_code,accounts_ammount=accounts_amount,invoice_ammount=result.invoice.amount,invoice_ammount_fact=inv_price,invoice_status=result.invoice.status,invoice_created_at=result.invoice.created_at,invoice_updated_at=result.invoice.updated_at,invoice_target='popolnenie_invoice_schet', promo = promo, quantity_guests_paid=quant, invoice_url=result.invoice.url)
         session.add(invoice_db)
         session.commit()
