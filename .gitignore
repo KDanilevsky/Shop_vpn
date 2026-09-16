@@ -25,5 +25,4 @@ operator_encrypt.py
 secrets_runtime.py
 secrets_runtime_gcp.py
 secrets_schema.py
-webhook.py
 scripts/encrypt.py
