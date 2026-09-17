@@ -1,14 +1,15 @@
+import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from db.async_db import SessionLocal
-import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
-
 CURRENT_EVENT_VERSION = 1
 
 
@@ -18,109 +19,72 @@ async def create_pg_event(
     session: AsyncSession | None = None,
     channel: str = "events",
 ) -> None:
-    """
-    Unified event emitter for PostgreSQL LISTEN/NOTIFY.
-    Produces a versioned, traceable event envelope:
-
-    {
-        "id": "...",
-        "type": "invoice_paid",
-        "version": 1,
-        "timestamp": "...",
-        "payload": {...}
-    }
-    """
-
-    # --- Build event envelope ---
-    evt = {
-        "id": str(uuid.uuid4()),  # traceability
+    event = {
+        "id": str(uuid.uuid4()),
         "type": event_type,
         "version": CURRENT_EVENT_VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "payload": payload or {},
     }
-
-    # --- Serialize ---
-    json_payload = json.dumps(evt, ensure_ascii=False)
+    serialized = json.dumps(event, ensure_ascii=False)
 
     try:
         if session is not None:
-            conn = await session.connection()
-            await conn.execute(
+            connection = await session.connection()
+            await connection.execute(
                 text("SELECT pg_notify(:channel, :payload)"),
-                {"channel": channel, "payload": json_payload},
+                {"channel": channel, "payload": serialized},
             )
             return
 
-        # No session provided → create a temporary one
-        async with SessionLocal() as s:
-            async with s.begin():
-                conn = await s.connection()
-                await conn.execute(
+        async with SessionLocal() as local_session:
+            async with local_session.begin():
+                connection = await local_session.connection()
+                await connection.execute(
                     text("SELECT pg_notify(:channel, :payload)"),
-                    {"channel": channel, "payload": json_payload},
+                    {"channel": channel, "payload": serialized},
                 )
-
     except Exception:
-        logger.exception(
-            "Failed to emit event %s with payload %s", event_type, payload
-        )
+        logger.exception("Failed to emit event %s", event_type)
 
-
-# events.py (continued)
-
-from workers.invoice_processor import invoice_event
-from workers.bitpappa_invoice_reconciller import bitpappa_event
-from workers.reconciler import reconcile_event
-from workers.user_notification import notify_event
 
 async def on_event(raw_payload: str):
-    """
-    Called by PgListener when NOTIFY arrives.
-    Parses JSON, validates schema, dispatches to correct worker.
-    """
-
-    # --- Parse JSON ---
+    """Parse and dispatch an event without importing workers at module load time."""
     try:
-        evt = json.loads(raw_payload)
-    except Exception:
+        event = json.loads(raw_payload)
+    except (TypeError, json.JSONDecodeError):
         logger.error("Invalid event payload: %s", raw_payload)
         return
 
-    # --- Validate envelope ---
-    etype = evt.get("type")
-    version = evt.get("version")
-    payload = evt.get("payload") or {}
+    event_type = event.get("type")
+    version = event.get("version")
+    payload = event.get("payload") or {}
 
-    if not etype or version is None:
-        logger.error("Malformed event: %s", evt)
+    if not event_type or version != CURRENT_EVENT_VERSION:
+        logger.warning("Malformed or unsupported event: %s", event)
         return
 
-    if version != CURRENT_EVENT_VERSION:
-        logger.warning(
-            "Unknown event version %s (current %s)",
-            version, CURRENT_EVENT_VERSION
-        )
-        return
-
-    # --- Dispatch table ---
-    handlers = {
-        "int_invoice_created": lambda: invoice_event.set(),
-        "invoice_paid": lambda: invoice_event.set(),
-        "bitpapa": lambda: bitpappa_event.set(),
-        "reconcile": lambda: reconcile_event.set(),
-        "notify": lambda: notify_event.set(),
-    }
-
-    handler = handlers.get(etype)
-
-    if handler:
-        try:
-            result = handler()
-            if asyncio.iscoroutine(result):
-                await result
-        except Exception:
-            logger.exception("Handler failed for event %s", etype)
-    else:
-        logger.warning("Unknown event type: %s", etype)
-
+    try:
+        if event_type in {"int_invoice_created", "invoice_paid"}:
+            from workers.invoice_processor import invoice_event
+            invoice_event.set()
+        elif event_type == "tx":
+            tx_id = payload.get("tx_id")
+            if tx_id is None:
+                logger.error("tx event has no tx_id: %s", event)
+                return
+            from workers.process_tx import process_tx
+            asyncio.create_task(process_tx(int(tx_id)))
+        elif event_type == "bitpapa":
+            from workers.bitpappa_invoice_reconciller import bitpapa_event
+            bitpapa_event.set()
+        elif event_type == "reconcile":
+            from workers.reconciler import reconcile_event
+            reconcile_event.set()
+        elif event_type == "notify":
+            from workers.user_notification import notify_event
+            notify_event.set()
+        else:
+            logger.warning("Unknown event type: %s", event_type)
+    except Exception:
+        logger.exception("Handler failed for event %s", event_type)
