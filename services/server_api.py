@@ -1,149 +1,185 @@
 import os
-from py3xui import Api, AsyncApi, Inbound, Client
 import uuid
-import qrcode
-import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Iterable
+from urllib.parse import quote
+
+import qrcode
+from py3xui import AsyncApi, Client
+
 from config import QRCODES_DIR
 
-# это для двухфакторной аутентификации, если нужно будет сделать
-import pyotp
+DEFAULT_INBOUND_ID = 1
+DEFAULT_FLOW = "xtls-rprx-vision"
 
 
-# Добавление нового клиента
-async def add_client_to_3xui_server(async_api, new_client_email,new_expiry_time,new_tg_id):
-    flow = "xtls-rprx-vision"
-    new_client = await Client(id=str(uuid.uuid4()), email=new_client_email,expiry_time=new_expiry_time,tg_id=new_tg_id,flow=flow, enable=True)
-    inbound_id = 1
-
-    await async_api.client.add(inbound_id, [new_client])
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
-# Обновление времени подписки клиента
-async def update_existing_3xui_client(async_api, inbounds, user_email, dayz):
+def _first_inbound(inbounds: Iterable[Any]) -> Any:
+    inbound = next(iter(inbounds), None)
+    if inbound is None:
+        raise LookupError("3x-ui returned no inbounds")
+    return inbound
+
+
+def _clients(inbound: Any) -> list[Any]:
+    settings = getattr(inbound, "settings", None)
+    clients = getattr(settings, "clients", None) if settings is not None else None
+    return list(clients or [])
+
+
+def _find_client(inbounds: Iterable[Any], email: str) -> tuple[Any, Any] | tuple[None, None]:
+    for inbound in inbounds:
+        for client in _clients(inbound):
+            if getattr(client, "email", None) == email:
+                return inbound, client
+    return None, None
+
+
+async def add_client_to_3xui_server(
+    async_api: AsyncApi,
+    new_client_email: str,
+    new_expiry_time: int,
+    new_tg_id: int | str,
+    inbound_id: int = DEFAULT_INBOUND_ID,
+) -> Any:
+    """Create a client in 3x-ui. ``expiry_time`` is Unix time in milliseconds."""
+    client = Client(
+        id=str(uuid.uuid4()),
+        email=new_client_email,
+        expiry_time=int(new_expiry_time),
+        tg_id=str(new_tg_id),
+        flow=DEFAULT_FLOW,
+        enable=True,
+    )
+    return await async_api.client.add(inbound_id, [client])
+
+
+async def update_existing_3xui_client(
+    async_api: AsyncApi,
+    inbounds: Iterable[Any],
+    user_email: str,
+    dayz: int,
+) -> int:
+    if dayz <= 0:
+        raise ValueError("dayz must be positive")
+
+    inbound_list = list(inbounds or [])
+    if not inbound_list:
+        raise LookupError("3x-ui returned no inbounds")
+
     client = await async_api.client.get_by_email(user_email)
+    if client is None:
+        raise LookupError(f"3x-ui client not found: {user_email}")
 
-    # находим new_expiry_time
-    time_now = int(str(time.time()*1000)[:13])
-    if time_now > client.expiry_time:
-        datetime_now = datetime.now(timezone.utc)
-        time_delta = timedelta(days=dayz)
-        new_expiry_time = datetime_now + time_delta
-        new_expiry_time = int(str(new_expiry_time.timestamp()*1000)[:13])
+    current_expiry = int(getattr(client, "expiry_time", 0) or 0)
+    if current_expiry <= _now_ms():
+        new_expiry = _now_ms() + dayz * 24 * 60 * 60 * 1000
     else:
-        new_expiry_time = int(((client.expiry_time/1000) + (dayz*24*60*60))*1000)
+        new_expiry = current_expiry + dayz * 24 * 60 * 60 * 1000
 
-    client.expiry_time = new_expiry_time
-    flow = "xtls-rprx-vision"
+    _, stored_client = _find_client(inbound_list, user_email)
+    client.id = getattr(stored_client, "id", None) or getattr(client, "id", None)
+    if not client.id:
+        raise LookupError(f"3x-ui client id not found: {user_email}")
 
-    client_id = None
-    for user_client in inbounds[0].settings.clients:
-        if user_client.email == user_email:
-            client_id = user_client.id
-    # print(client_id)
-    # print(type(client_id))
-    if client_id is not None:
-        client.id = client_id
-        await async_api.client.update(client.id, client, flow=flow)
-
-    return new_expiry_time
-
-# удаление всех неактивных клиентов
-async def delete_depleted_clients(async_api, inbound):
-    inbound_id = 1
-    await async_api.client.delete_depleted(inbound_id) # inbound.id
+    client.expiry_time = new_expiry
+    await async_api.client.update(client.id, client, flow=DEFAULT_FLOW)
+    return new_expiry
 
 
-async def delete_client(async_api, tg_id, suff):
-    user_email = str(tg_id)+f'-{suff}'
-    client = async_api.client.get_by_email(user_email)
-    inbound_id = 1
-
-    inbounds: list[Inbound] = async_api.inbound.get_list()
-    client_id = None
-    for user_client in inbounds[0].settings.clients:
-        if user_client.email == user_email:
-            client_id = user_client.id
-
-    if client_id is not None:
-        client.id = client_id
-
-    async_api.client.delete(inbound_id, client.id)
-
-# Получение ссылки ключа и Создание Qr кода с настройками
-async def get_client_settings_string_and_qr(inbounds, user_email, vpn_ip):
-
-    client_setttings_string = None
-    usr_list_id = 0
-    for user_client in inbounds[0].settings.clients:
-        if user_client.email == user_email:
-            pbk = inbounds[0].stream_settings.reality_settings['settings']['publicKey']
-            fp = inbounds[0].stream_settings.reality_settings['settings']['fingerprint']
-            sni = inbounds[0].stream_settings.reality_settings['serverNames'][0]
-            sid = inbounds[0].stream_settings.reality_settings['shortIds'][0]
-            # client_setttings_string = f'{inbounds[0].protocol}://{inbounds[0].settings.clients[0].id}@{vpn_ip}:{inbounds[0].port}?type={inbounds[0].stream_settings.network}&security={inbounds[0].stream_settings.security}&pbk={pbk}&fp={fp}&sni={sni}&sid={sid}&spx=%2F&flow={inbounds[0].settings.clients[0].flow}#{inbounds[0].settings.clients[0].email}'
-            client_setttings_string = f'{inbounds[0].protocol}://{inbounds[0].settings.clients[usr_list_id].id}@{vpn_ip}:{inbounds[0].port}?type={inbounds[0].stream_settings.network}&security={inbounds[0].stream_settings.security}&pbk={pbk}&fp={fp}&sni={sni}&sid={sid}&spx=%2F&flow={inbounds[0].settings.clients[usr_list_id].flow}#{inbounds[0].settings.clients[usr_list_id].email}'
-        usr_list_id += 1
-
-    img = qrcode.make(client_setttings_string)
-    type(img)  # qrcode.image.pil.PilImage
-    img_name = f"{user_email}.png"
-    img_path = os.path.join(QRCODES_DIR, img_name)
-    img.save(img_path) 
-
-    return client_setttings_string, img_path
+async def delete_depleted_clients(
+    async_api: AsyncApi,
+    inbound: Any | None = None,
+    inbound_id: int | None = None,
+) -> Any:
+    resolved_id = inbound_id or getattr(inbound, "id", None) or DEFAULT_INBOUND_ID
+    return await async_api.client.delete_depleted(resolved_id)
 
 
-# async def choose_server(server_country_id, server_add_rule):
-#     # Esli server_add_rule == 1 - to vibirautsa servera tolko s visokim ratingom, esli server_add_rule == 0, to vse krome serverov s visokim raitingom
+async def delete_client(
+    async_api: AsyncApi,
+    tg_id: int | str,
+    suff: str,
+    inbound_id: int = DEFAULT_INBOUND_ID,
+) -> bool:
+    user_email = f"{tg_id}-{suff}"
+    inbounds = await async_api.inbound.get_list()
+    _, client = _find_client(inbounds or [], user_email)
+    if client is None:
+        return False
 
-#     # выбор сервера - дописать алго
-#     servers = session.query(AllServers).all()
+    client_id = getattr(client, "id", None)
+    if not client_id:
+        raise LookupError(f"3x-ui client id not found: {user_email}")
+    await async_api.client.delete(inbound_id, client_id)
+    return True
 
-#     min_servers_count_for_choose_rules = 5
-#     procent_servers_bez_dobavlenia = 20
-#     chosen_server = None
 
-#     servers_ratings_id_stack = []
-    
-#     for server in servers:
-#         if server.country_id == server_country_id:
-#             di = {
-#                 "id":server.id,
-#                 "country_id":server.country_id,
-#                 "rating":server.server_rating,
-#                 "subs_count":server.all_subscriptions,
-#                 "subs_max":server.max_subscriptions
-#                 }
-#             servers_ratings_id_stack.append(di)
-#     # new_servers_ratings_id_stack = sorted(servers_ratings_id_stack, key=itemgetter('rating'), reverse=True)
-#     new_servers_ratings_id_stack = sorted(servers_ratings_id_stack, key=itemgetter('rating'))
+def _reality_settings(inbound: Any) -> dict[str, Any]:
+    stream = getattr(inbound, "stream_settings", None)
+    reality = getattr(stream, "reality_settings", None) if stream else None
+    if not isinstance(reality, dict):
+        raise ValueError("Inbound has no valid Reality settings")
+    settings = reality.get("settings") or {}
+    server_names = reality.get("serverNames") or []
+    short_ids = reality.get("shortIds") or []
+    required = settings.get("publicKey"), settings.get("fingerprint"), server_names, short_ids
+    if not required[0] or not required[1] or not server_names or not short_ids:
+        raise ValueError("Inbound Reality settings are incomplete")
+    return {
+        "public_key": settings["publicKey"],
+        "fingerprint": settings["fingerprint"],
+        "sni": server_names[0],
+        "short_id": short_ids[0],
+    }
 
-#     high_rate_serv_chosen = False
-#     for i in range(len(new_servers_ratings_id_stack)):
-#         if len(new_servers_ratings_id_stack) >= min_servers_count_for_choose_rules:
-#             count_servers_bez_dobavlenya = int((len(new_servers_ratings_id_stack) * procent_servers_bez_dobavlenia) / 100)
-#             if server_add_rule == 0:
-#                 if i < len(new_servers_ratings_id_stack) - count_servers_bez_dobavlenya: # Esli nado vibrat serv kuda dobavlyaem tolko perenosom izza visokogo ratinga to stavim znak >=
-#                     if new_servers_ratings_id_stack[i]["subs_count"] < new_servers_ratings_id_stack[i]["subs_max"]:
-#                         chosen_server = int(new_servers_ratings_id_stack[i]["id"])
-#             else:
-#                 if i >= len(new_servers_ratings_id_stack) - count_servers_bez_dobavlenya:
-#                     if new_servers_ratings_id_stack[i]["subs_count"] < new_servers_ratings_id_stack[i]["subs_max"]:
-#                         chosen_server = int(new_servers_ratings_id_stack[i]["id"])
-#                         high_rate_serv_chosen = True
-#         else:
-#             if new_servers_ratings_id_stack[i]["subs_count"] < new_servers_ratings_id_stack[i]["subs_max"]:
-#                 chosen_server = int(new_servers_ratings_id_stack[i]["id"])
 
-#     # ETO esli mi hotim dobavlyat po ratingu na drugie servera - kogda na servah s visokim ratingom net mesta
-#     # esli ne nado - prosto zakomentiruy - togda chosen_server = None
-#     if server_add_rule == 1:
-#         if len(new_servers_ratings_id_stack) >= min_servers_count_for_choose_rules:
-#             if high_rate_serv_chosen is False:
-#                 new_servers_ratings_id_stack = sorted(servers_ratings_id_stack, key=itemgetter('rating'), reverse=True)
-#                 for i in range(len(new_servers_ratings_id_stack)):
-#                     if new_servers_ratings_id_stack[i]["subs_count"] < new_servers_ratings_id_stack[i]["subs_max"]:
-#                         chosen_server = int(new_servers_ratings_id_stack[i]["id"])
+async def get_client_settings_string_and_qr(
+    inbounds: Iterable[Any],
+    user_email: str,
+    vpn_ip: str,
+) -> tuple[str, str]:
+    inbound_list = list(inbounds or [])
+    inbound, client = _find_client(inbound_list, user_email)
+    if inbound is None or client is None:
+        raise LookupError(f"3x-ui client not found: {user_email}")
 
-#     return chosen_server
+    stream = getattr(inbound, "stream_settings", None)
+    reality = _reality_settings(inbound)
+    network = getattr(stream, "network", "tcp")
+    protocol = getattr(inbound, "protocol", "vless")
+    port = getattr(inbound, "port", None)
+    client_id = getattr(client, "id", None)
+    if not port or not client_id:
+        raise ValueError("Inbound/client is missing port or client id")
+
+    settings = (
+        f"{protocol}://{client_id}@{vpn_ip}:{port}"
+        f"?type={quote(str(network))}&security=reality"
+        f"&pbk={quote(str(reality['public_key']))}"
+        f"&fp={quote(str(reality['fingerprint']))}"
+        f"&sni={quote(str(reality['sni']))}"
+        f"&sid={quote(str(reality['short_id']))}"
+        f"&flow={quote(DEFAULT_FLOW)}"
+    )
+
+    qr_dir = Path(QRCODES_DIR)
+    qr_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{user_email}.png"
+    image_path = qr_dir / safe_name
+    qrcode.make(settings).save(image_path)
+    return settings, str(image_path)
+
+
+__all__ = [
+    "AsyncApi",
+    "add_client_to_3xui_server",
+    "update_existing_3xui_client",
+    "delete_depleted_clients",
+    "delete_client",
+    "get_client_settings_string_and_qr",
+]
