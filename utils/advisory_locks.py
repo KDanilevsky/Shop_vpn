@@ -35,34 +35,55 @@ def _tx_lock_key(tx_id: int) -> int:
 # Generic helpers
 # ------------------------------------------------------------
 
+# async def _try_lock(session: AsyncSession, key: int) -> bool:
+#     """
+#     Try to acquire a PostgreSQL advisory lock.
+#     Returns True if lock acquired, False otherwise.
+#     """
+#     try:
+#         r = await session.execute(
+#             text("SELECT pg_try_advisory_lock(:key)"),
+#             {"key": key},
+#         )
+#         return bool(r.scalar())
+#     except Exception:
+#         logger.exception("Failed to acquire advisory lock %s", key)
+#         return False
+
+
+# async def _unlock(session: AsyncSession, key: int) -> None:
+#     """
+#     Release a PostgreSQL advisory lock.
+#     """
+#     try:
+#         await session.execute(
+#             text("SELECT pg_advisory_unlock(:key)"),
+#             {"key": key},
+#         )
+#     except Exception:
+#         logger.exception("Failed to release advisory lock %s", key)
+
 async def _try_lock(session: AsyncSession, key: int) -> bool:
     """
-    Try to acquire a PostgreSQL advisory lock.
-    Returns True if lock acquired, False otherwise.
+    Используем транзакционный замок pg_try_advisory_xact_lock.
+    Он автоматически уничтожается базой данных при commit или rollback.
     """
     try:
         r = await session.execute(
-            text("SELECT pg_try_advisory_lock(:key)"),
+            text("SELECT pg_try_advisory_xact_lock(:key)"),
             {"key": key},
         )
         return bool(r.scalar())
     except Exception:
-        logger.exception("Failed to acquire advisory lock %s", key)
+        logger.exception("Failed to acquire transaction advisory lock %s", key)
         return False
-
 
 async def _unlock(session: AsyncSession, key: int) -> None:
     """
-    Release a PostgreSQL advisory lock.
+    Для xact-замков ручной unlock не требуется, база сделает это сама.
+    Оставляем функцию пустой, чтобы не переписывать блоки finally в воркерах.
     """
-    try:
-        await session.execute(
-            text("SELECT pg_advisory_unlock(:key)"),
-            {"key": key},
-        )
-    except Exception:
-        logger.exception("Failed to release advisory lock %s", key)
-
+    pass
 
 # ------------------------------------------------------------
 # Invoice locks

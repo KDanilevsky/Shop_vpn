@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 # Optional imports for vault integrations
 try:

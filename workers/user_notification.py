@@ -70,7 +70,7 @@ def build_notification_text(reason: str, payload: dict | None) -> str:
     # -----------------------------
     if reason == "subscription_autorenew_success":
         count = payload.get("active_subs", 1)
-        price = payload.get("total_price_usd", 0)
+        price = payload.get("total_price_usd", 0) / 100
         return (
             f"Автопродление выполнено успешно.\n"
             f"Продлено подписок: {count}.\n"
@@ -79,7 +79,7 @@ def build_notification_text(reason: str, payload: dict | None) -> str:
 
     if reason == "subscription_autorenew_insufficient_funds":
         count = payload.get("active_subs", 1)
-        price = payload.get("total_price_usd", 0)
+        price = payload.get("total_price_usd", 0) / 100
         return (
             f"Недостаточно средств для автопродления {count} подписок.\n"
             f"Необходимо: {price:.2f}$.\n"
@@ -150,62 +150,65 @@ def compute_next_attempt(attempt_count: int) -> datetime | None:
 async def process_pending_notifications(bot):
     while True:
         async with SessionLocal() as session:
-            async with session.begin():
-                now = _now_utc()
+            # async with session.begin():
+            now = _now_utc()
 
-                q = (
-                    select(UserNotifications)
-                    .where(
-                        UserNotifications.sent_at.is_(None),
-                        UserNotifications.failed_permanently.is_(False),
-                        (UserNotifications.next_attempt_at.is_(None)) |
-                        (UserNotifications.next_attempt_at <= now),
-                    )
-                    .limit(BATCH_SIZE)
-                    .with_for_update(skip_locked=True)
+            q = (
+                select(UserNotifications)
+                .where(
+                    UserNotifications.sent_at.is_(None),
+                    UserNotifications.failed_permanently.is_(False),
+                    (UserNotifications.next_attempt_at.is_(None)) |
+                    (UserNotifications.next_attempt_at <= now),
                 )
-                r = await session.execute(q)
-                notifs = r.scalars().all()
+                .limit(BATCH_SIZE)
+                .with_for_update(skip_locked=True)
+            )
+            r = await session.execute(q)
+            notifs = r.scalars().all()
 
-                if not notifs:
-                    await session.commit()
-                    await asyncio.sleep(2)
-                    continue
-                    
+            if not notifs:
+                await session.commit()
+                await asyncio.sleep(2)
+                continue
+                
 
-                for n in notifs:
-                    text = build_notification_text(n.reason, n.payload)
+            for n in notifs:
+                text = build_notification_text(n.reason, n.payload)
 
-                    try:
-                        await bot.send_message(chat_id=n.user_id, text=text)
-                        n.sent_at = _now_utc()
-                        n.last_error = None
-
-                    except RetryAfter as e:
-                        # Telegram says: wait X seconds
-                        n.attempt_count += 1
-                        n.last_error = f"RetryAfter: {e.retry_after}s"
-                        n.next_attempt_at = _now_utc() + timedelta(seconds=e.retry_after)
-                        session.add(n)
-                        await session.commit()
-                        await asyncio.sleep(e.retry_after)
-                        continue
-
-                    except Exception as exc:
-                        n.attempt_count += 1
-                        n.last_error = str(exc)[:500]
-
-                        next_at = compute_next_attempt(n.attempt_count)
-                        if next_at is None or n.attempt_count >= MAX_ATTEMPTS:
-                            n.failed_permanently = True
-                            n.next_attempt_at = None
-                        else:
-                            n.next_attempt_at = next_at
-
+                try:
+                    await bot.send_message(chat_id=n.user_id, text=text)
+                    n.sent_at = _now_utc()
+                    n.last_error = None
                     session.add(n)
+                    await session.commit()
 
-                    # THROTTLING: avoid hitting Telegram limits
-                    await asyncio.sleep(0.05)  # 50 ms
+                except RetryAfter as e:
+                    # Telegram says: wait X seconds
+                    n.attempt_count += 1
+                    n.last_error = f"RetryAfter: {e.retry_after}s"
+                    n.next_attempt_at = _now_utc() + timedelta(seconds=e.retry_after)
+                    session.add(n)
+                    await session.commit()
+                    await asyncio.sleep(e.retry_after)
+                    continue
+
+                except Exception as exc:
+                    n.attempt_count += 1
+                    n.last_error = str(exc)[:500]
+
+                    next_at = compute_next_attempt(n.attempt_count)
+                    if next_at is None or n.attempt_count >= MAX_ATTEMPTS:
+                        n.failed_permanently = True
+                        n.next_attempt_at = None
+                    else:
+                        n.next_attempt_at = next_at
+
+                session.add(n)
+                await session.commit()
+
+                # THROTTLING: avoid hitting Telegram limits
+                await asyncio.sleep(0.05)  # 50 ms
 
             # commit all updates
 

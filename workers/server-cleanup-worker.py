@@ -29,34 +29,53 @@ def _now_ms():
     return int(_now().timestamp() * 1000)
 
 
-async def _delete_client_on_server(server_id: int, client_email: str):
+async def _delete_client_on_server(server_id: int, client_email: str) -> bool:
     servers_cfg = get_servers_list()
-    if server_id not in servers_cfg:
-        logger.warning("Server %s not in config, skipping deletion for %s", server_id, client_email)
-        return
+    cfg = servers_cfg.get(server_id)
+    if not cfg:
+        raise LookupError(f"Server {server_id} is not configured")
 
-    cfg = servers_cfg[server_id]
     api = AsyncApi(
-        host=cfg["http"],
-        username=cfg["username"],
-        password=cfg["pass"],
-        token=cfg.get("token"),
-        use_tls_verify=True,
-        custom_certificate_path=cfg.get("sert"),
+        host= cfg["http"],
+        username= cfg["username"],
+        password= cfg.get("password", cfg.get("pass")),
+        token= cfg.get("token"),
+        use_tls_verify= cfg.get("use_tls_verify", True),
+        custom_certificate_path= cfg.get("sert"),
     )
-    await api.login()
 
-    inbounds = await api.inbound.get_list()
-    # naive search by email
-    for inbound in inbounds:
-        clients = getattr(inbound.settings, "clients", []) if hasattr(inbound, "settings") else []
-        for client in clients:
-            if getattr(client, "email", None) == client_email:
-                await api.client.remove(inbound.id, client.id)
-                logger.info("Deleted client %s from server %s", client_email, server_id)
-                return
+    try:
+        await api.login()
+        
+        target_inbound_id = None
+        target_client_id = None
 
-    logger.info("Client %s not found on server %s (already deleted?)", client_email, server_id)
+        # Шаг 1: Только ищем нужного клиента, ничего не удаляя внутри цикла
+        for inbound in await api.inbound.get_list():
+            settings = getattr(inbound, "settings", None)
+            for client in (getattr(settings, "clients", None) or []):
+                if getattr(client, "email", None) == client_email:
+                    target_inbound_id = inbound.id
+                    target_client_id = client.id
+                    break
+            if target_client_id:
+                break
+
+        # Шаг 2: Удаляем за пределами циклов итерации
+        if target_inbound_id and target_client_id:
+            await api.client.delete(target_inbound_id, target_client_id)
+            logger.info("Deleted client %s from server %s", client_email, server_id)
+            return True
+
+        logger.info("Client %s is already absent from server %s", client_email, server_id)
+        return True
+
+    finally:
+        close = getattr(api, "close", None)
+        if close:
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
 
 
 async def _cleanup_batch():

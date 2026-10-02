@@ -72,8 +72,8 @@ async def _create_internal_autorenew_invoice(session, user, subs, total_price_ce
         invoice_target="subscription_autorenew_internal",
         invoice_status="pending",
         processing_status="pending",
-        invoice_ammount=total_price_cents,
-        invoice_ammount_fact=total_price_cents,
+        invoice_ammount=int(total_price_cents),
+        invoice_ammount_fact=int(total_price_cents),
         invoice_created_at=_now(),
         invoice_updated_at=_now(),
     )
@@ -85,8 +85,8 @@ async def _create_internal_autorenew_invoice(session, user, subs, total_price_ce
             acc_number=sub.slot_number,
             server_country_id=sub.server_country_id,
             server_id=sub.server_id,
-            price=UPDATED_PRICE,
-            final_price=total_price_cents / 100,
+            price=int(round(UPDATED_PRICE * 100)),
+            final_price=int(total_price_cents),
         )
         session.add(item)
 

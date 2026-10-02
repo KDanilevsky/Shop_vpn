@@ -74,7 +74,18 @@ async def on_event(raw_payload: str):
                 logger.error("tx event has no tx_id: %s", event)
                 return
             from workers.process_tx import process_tx
-            asyncio.create_task(process_tx(int(tx_id)))
+            # asyncio.create_task(process_tx(int(tx_id)))
+
+            # Запускаем параллельную задачу (семафоры и блокировки отработают внутри)
+            task = asyncio.create_task(process_tx(int(tx_id)))
+            
+            # Жестко фиксируем задачу в памяти, чтобы Garbage Collector её не удалил
+            if not hasattr(asyncio, "_running_events_tasks"):
+                asyncio._running_events_tasks = set()
+            
+            asyncio._running_events_tasks.add(task)
+            # Как только задача сама завершится, она удалится из памяти
+            task.add_done_callback(asyncio._running_events_tasks.discard)
         elif event_type == "bitpapa":
             from workers.bitpappa_invoice_reconciller import bitpapa_event
             bitpapa_event.set()
@@ -84,6 +95,11 @@ async def on_event(raw_payload: str):
         elif event_type == "notify":
             from workers.user_notification import notify_event
             notify_event.set()
+        elif event_type == "restart_worker":
+            worker_name = payload.get("worker_name")
+            if worker_name:
+                from workers.supervisor import cancel_worker_by_name
+                cancel_worker_by_name(worker_name)
         else:
             logger.warning("Unknown event type: %s", event_type)
     except Exception:

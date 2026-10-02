@@ -28,7 +28,7 @@ async def _fetch_unfinished_invoices(session):
     """Fetch invoices that still need reconciliation."""
     q = (
         select(AllInvoices)
-        .where(AllInvoices.status.not_in(["paid", "cancelled"]))
+        .where(AllInvoices.invoice_status.not_in(["paid", "cancelled"]))
     )
     r = await session.execute(q)
     return r.scalars().all()
@@ -41,7 +41,7 @@ async def _sync_invoice(session, db_inv, bitpapa_inv):
     
     logger.info(
         "Invoice %s status changed: %s → %s",
-        db_inv.id, db_inv.status, bitpapa_inv.status
+        db_inv.invoice_id, db_inv.invoice_status, bitpapa_inv.status
     )
 
     db_inv.invoice_status = bitpapa_inv.status
@@ -73,7 +73,7 @@ async def _sync_invoice(session, db_inv, bitpapa_inv):
 async def _process_bitpapa_invoices(bitpapa_service: BitpapaService):
     """Full reconciliation pass."""
     invoices = await bitpappa_get_invoices(bitpapa_service)
-    bitpapa_map = {inv.invoice_id: inv for inv in invoices}
+    bitpapa_map = {inv.id: inv for inv in invoices}
 
     async with SessionLocal() as session:
         async with session.begin():

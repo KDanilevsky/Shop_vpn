@@ -29,10 +29,10 @@ async def handle_balance_top_up(update: Update, context: CallbackContext):
         if amount.endswith("ch"):
             # снятие выбора
             selected = None
-            context.user_data["balance_top_up"] = 0.0
+            context.user_data["balance_top_up"] = 0
         else:
             # установка выбора
-            selected = float(amount)
+            selected = int(float(amount) * 100)
             context.user_data["balance_top_up"] = selected
 
     # -----------------------------
@@ -40,8 +40,8 @@ async def handle_balance_top_up(update: Update, context: CallbackContext):
     # -----------------------------
     text = (
         f"{query.from_user.full_name},\n"
-        f"<b>Баланс:</b> {balance_all} $\n"
-        f"<b>Минимальный платеж:</b> {UPDATED_MIN_PAY} $*\n"
+        f"<b>Баланс:</b> {balance_all / 100:.2f} $\n"
+        f"<b>Минимальный платеж:</b> {UPDATED_MIN_PAY / 100:.2f} $*\n"
         "*Если платеж меньше минимального, то счет выставится на сумму мин. платежа, "
         "остаток зачислится на ваш баланс.\n"
     )

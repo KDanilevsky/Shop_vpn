@@ -3,7 +3,7 @@ import logging
 from telegram import InputMediaPhoto, Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 from keyboards.wallet_kb import wallet_keyboard
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from db.models import AllUsers, FriendlyAccount, SecretToken
 from services.helpers import get_or_create_secret_token
@@ -396,7 +396,8 @@ async def wallet_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "<b>📜 История транзакций</b>\n\n"
 
         for tx in txs:
-            dt = datetime.fromtimestamp(tx.trans_time / 1000, tz=timezone.utc)
+            # dt = datetime.fromtimestamp(tx.trans_time / 1000, tz=timezone.utc)
+            dt = tx.trans_time.strftime('%d.%m.%Y %H:%M')
             amount = tx.trans_ammount / 100
 
             if tx.trans_target == "wallet_topup_multi":

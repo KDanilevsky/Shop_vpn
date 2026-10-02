@@ -6,6 +6,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import helpers
 from keyboards.share_kb import share_keyboard
 from config import ASSETS_DIR, BOT_SHOP_NAME
+from db.async_db import SessionLocal
+from db.models import AllUsers
+from services.helpers import get_or_create_secret_token
+
 
 
 async def _safe_edit(message, text, keyboard):
@@ -91,6 +95,7 @@ async def referal_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     keyboard = [
         [InlineKeyboardButton("\U0001F381 Получить", url=link)],
+        [InlineKeyboardButton("⬅️ Назад", callback_data="back:about")]
     ]
 
     await _safe_edit(query.message, text, keyboard)

@@ -281,7 +281,7 @@ async def count(update: Update, context: ContextTypes.DEFAULT_TYPE):
             quantity_paid = int(getattr(user_db, "quantity_guests_paid", 0))
             promo_active = getattr(user_db, "user_promo_new", 0)
             promo_until = getattr(user_db, "user_promo_new_days", 0)
-            balance_all = (user_db.user_balance or 0) / 100
+            balance_all = int(user_db.user_balance or 0)
 
             if promo_active == 1 and now_ms > promo_until:
                 user_db.user_promo_new = 0
@@ -365,7 +365,7 @@ async def count(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"<b>Активен промо-период.</b> "
                     f"Скидка {DISCOUNT_BASE_PROCENTS_PROMO}% на первую подписку.\n"
                 )
-            text += f"<b>Баланс:</b> {balance_all:.2f} $\n"
+            text += f"<b>Баланс:</b> {balance_all / 100:.2f} $\n"
             text += f"<b>Бесплатных аккаунтов:</b> {free_acc}\n"
             text += f"<b>Цена продления:</b> {total_price} $\n"
             text += f"<b>Минимальный платеж:</b> {UPDATED_MIN_PAY} $\n\n"
@@ -896,7 +896,7 @@ async def _create_bitpapa_invoice_for_subscription(
         invoice_curency=invoice_result.invoice.currency_code,  # "USDT"
         accounts_ammount=accounts_amount,
         invoice_ammount=res_invoice_amount,                    # what Bitpapa expects
-        invoice_ammount_fact=int(price * 100),                 # what user should pay logically
+        invoice_ammount_fact=int(round(price * 100)),              # what user should pay logically
         invoice_status=invoice_result.invoice.status,          # "pending"
         processing_status="pending",
         invoice_created_at=created_at,

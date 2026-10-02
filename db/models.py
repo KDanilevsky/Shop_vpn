@@ -362,6 +362,12 @@ class AllTransactions(Base):
     promo = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
 
+    invoice_id = Column(String(255), nullable=True, index=True)
+    
+    __table_args__ = (
+        UniqueConstraint('invoice_id', 'trans_target', name='ux_all_transactions_invoice_target'),
+    )
+
     user = relationship("AllUsers", backref="transactions", lazy="selectin")
 
 

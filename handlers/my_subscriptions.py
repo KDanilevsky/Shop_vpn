@@ -164,15 +164,26 @@ async def my_subscriptions_open(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
         # Send settings file separately
+            # Send settings file separately
         if settings_string:
+            import io
             settings_bytes = settings_string.encode("utf-8")
+            bio = io.BytesIO(settings_bytes)
             await query.message.reply_document(
-                document=InputFile(
-                    settings_bytes,
-                    filename=f"settings_slot_{slot}.txt"
-                ),
+                document=bio,
+                filename=f"settings_slot_{slot}.txt",
                 caption="Ваши настройки"
             )
+
+        # if settings_string:
+        #     settings_bytes = settings_string.encode("utf-8")
+        #     await query.message.reply_document(
+        #         document=InputFile(
+        #             settings_bytes,
+        #             filename=f"settings_slot_{slot}.txt"
+        #         ),
+        #         caption="Ваши настройки"
+        #     )
 
 
 async def my_subscriptions_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -180,6 +191,9 @@ async def my_subscriptions_back(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def register_my_subscriptions_handlers(application):
-    application.add_handler(CallbackQueryHandler(my_subscriptions_menu, pattern=r"^my_subscriptions$"))
+    application.add_handler(CallbackQueryHandler(my_subscriptions_menu, pattern=r"^(my_subscriptions|my_subs_back)$"))
     application.add_handler(CallbackQueryHandler(my_subscriptions_open, pattern=r"^my_subs_open:\d+$"))
-    application.add_handler(CallbackQueryHandler(my_subscriptions_back, pattern=r"^my_subs_back$"))
+
+    # application.add_handler(CallbackQueryHandler(my_subscriptions_menu, pattern=r"^my_subscriptions$"))
+    # application.add_handler(CallbackQueryHandler(my_subscriptions_open, pattern=r"^my_subs_open:\d+$"))
+    # application.add_handler(CallbackQueryHandler(my_subscriptions_back, pattern=r"^my_subs_back$"))

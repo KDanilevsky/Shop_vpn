@@ -63,13 +63,13 @@ async def _schedule_worker(semaphore: asyncio.Semaphore, tx_id: int):
     try:
         async with semaphore:
             # Acquire advisory lock BEFORE processing
-            async with SessionLocal() as session:
-                async with session.begin():
-                    got_lock = await acquire_tx_lock(session, tx_id)
+            # async with SessionLocal() as session:
+            #     async with session.begin():
+            #         got_lock = await acquire_tx_lock(session, tx_id)
 
-            if not got_lock:
-                logger.info("tx %s locked by another worker, skipping", tx_id)
-                return
+            # if not got_lock:
+            #     logger.info("tx %s locked by another worker, skipping", tx_id)
+            #     return
 
             _inflight_tx.add(tx_id)
 

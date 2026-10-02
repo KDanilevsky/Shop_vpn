@@ -147,12 +147,16 @@ async def _process_single_invoice(session, candidate):
                 if not targets:
                     raise RuntimeError("No topup targets found")
                 amount = int(invoice.invoice_ammount) // len(targets)
-                for target in targets:
+
+                remainder = int(invoice.invoice_ammount) % len(targets)
+                for idx, target in enumerate(targets):
                     recipient = user if target.target_type == "self" else await session.get(
                         AllUsers, target.friend_user_id, with_for_update=True
                     )
                     if recipient:
                         recipient.user_balance = (recipient.user_balance or 0) + amount
+                        if idx == 0:
+                            recipient.user_balance = (recipient.user_balance or 0) + remainder
                         session.add(AllTransactions(
                             user_id=recipient.user_id,
                             trans_time=datetime.now(timezone.utc),

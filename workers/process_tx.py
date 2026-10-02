@@ -328,7 +328,9 @@ async def process_tx(tx_id: int) -> None:
                         admin_share = frozen_cents
 
                         if inviter2 and STANDART_PARTNER_PROCENT and STANDART_PARTNER_PROCENT > 0:
-                            partner_share = frozen_cents * int(STANDART_PARTNER_PROCENT) // 100
+                            # partner_share = frozen_cents * int(STANDART_PARTNER_PROCENT) // 100
+                            # ИСПРАВЛЕНО: Безопасный расчет долей в центах без потерь копеек
+                            partner_share = int(round((frozen_cents * float(STANDART_PARTNER_PROCENT)) / 100.0))
                             admin_share = frozen_cents - partner_share
 
                         r_admin = await session2.execute(

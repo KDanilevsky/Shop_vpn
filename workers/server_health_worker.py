@@ -44,22 +44,54 @@ async def check_single_server(cfg: dict):
                 await result
 
 
+# async def server_health_supervisor():
+#     configs = get_servers_list()
+#     async with SessionLocal() as session:
+#         servers = (await session.scalars(select(AllServers))).all()
+#         now_ms = int(time() * 1000)
+#         for server in servers:
+#             cfg = configs.get(server.id)
+#             if not cfg:
+#                 server.is_online = False
+#             else:
+#                 online, active_users, load = await check_single_server(cfg)
+#                 server.is_online = online
+#                 server.active_users = active_users
+#                 server.load = load
+#             server.last_check = now_ms
+#         await session.commit()
+
 async def server_health_supervisor():
     configs = get_servers_list()
+    
+    # 1. Быстро забираем список серверов из БД и СРАЗУ закрываем сессию
     async with SessionLocal() as session:
-        servers = (await session.scalars(select(AllServers))).all()
-        now_ms = int(time() * 1000)
-        for server in servers:
-            cfg = configs.get(server.id)
-            if not cfg:
-                server.is_online = False
-            else:
-                online, active_users, load = await check_single_server(cfg)
-                server.is_online = online
-                server.active_users = active_users
-                server.load = load
-            server.last_check = now_ms
-        await session.commit()
+        servers_db = (await session.scalars(select(AllServers))).all()
+        # Сохраняем ID серверов, чтобы не держать живые объекты SQLAlchemy в памяти во время сетевых запросов
+        server_ids = [s.id for s in servers_db]
+
+    now_ms = int(time() * 1000)
+    results = {}
+
+    # 2. Сетевые запросы делаются здесь — база данных полностью свободна!
+    for s_id in server_ids:
+        cfg = configs.get(s_id)
+        if not cfg:
+            results[s_id] = (False, 0, 0.0)
+        else:
+            online, active_users, load = await check_single_server(cfg)
+            results[s_id] = (online, active_users, load)
+
+    # 3. Открываем короткую сессию только для того, чтобы за долю миллисекунды записать результаты в БД
+    async with SessionLocal() as session:
+        async with session.begin():
+            for s_id, (online, active_users, load) in results.items():
+                server = await session.get(AllServers, s_id)
+                if server:
+                    server.is_online = online
+                    server.active_users = active_users
+                    server.load = load
+                    server.last_check = now_ms
 
 
 async def server_health_worker_loop(stop_event: asyncio.Event | None = None):

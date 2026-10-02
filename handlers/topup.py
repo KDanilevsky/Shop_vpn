@@ -321,46 +321,49 @@ async def wallet_topup_pay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---------------------------------------------------------
     # 3. Save invoice + selected accounts to DB
     # ---------------------------------------------------------
+    # === ИСПРАВЛЕННЫЙ БЛОК СОХРАНЕНИЯ ===
+    # Все операции выполняются строго внутри одной сессии и транзакции
     async with SessionLocal() as session:
         async with session.begin():
-
-            # Save invoice
             invoice_db = AllInvoices(
-                user_id=tg_id,
-                username=query.from_user.username,
-                user_full_name=query.from_user.full_name,
                 invoice_id=invoice_result.invoice.id,
-                invoice_curency=invoice_result.invoice.currency_code,
-                accounts_ammount=len(selected_keys),
-                invoice_ammount=invoice_amount_cents,
-                invoice_ammount_fact=invoice_amount_cents,
+                user_id=tg_id,
+                username=update.effective_user.username,
+                user_full_name=update.effective_user.full_name,
+                invoice_curency=invoice_result.invoice.currency,
                 invoice_status=invoice_result.invoice.status,
+                invoice_ammount=int(float(invoice_result.invoice.amount)),
+                invoice_ammount_fact=int(float(invoice_result.invoice.amount_fact or 0)),
+                accounts_ammount=len(selected_keys),
+                invoice_target="topup",
+                invoice_source="bitpapa",
+                invoice_url=invoice_result.invoice.url,
                 invoice_created_at=datetime.fromisoformat(invoice_result.invoice.created_at),
                 invoice_updated_at=datetime.fromisoformat(invoice_result.invoice.updated_at),
-                invoice_target="wallet_topup_multi",
-                promo=user_db.user_promo_new,
-                quantity_guests_paid=user_db.quantity_guests_paid,
-                invoice_url=invoice_result.invoice.url,
+                processing_status="pending"
             )
             session.add(invoice_db)
-
-            # Save selected accounts
+            
+            # Цикл сохранения целей теперь находится ВНУТРИ транзакции
             for key in selected_keys:
                 if key == "self":
-                    session.add(InvoiceTopupTargets(
+                    target = InvoiceTopupTargets(
                         invoice_id=invoice_result.invoice.id,
-                        target_type="self",
-                        friend_user_id=None,
-                    ))
-                else:
-                    fa_id = int(key.split("_")[1])
-                    fa = await session.get(FriendlyAccount, fa_id)
-                    if fa:
-                        session.add(InvoiceTopupTargets(
-                            invoice_id=invoice_result.invoice.id,
-                            target_type="friend",
-                            friend_user_id=fa.friend_user_id,
-                        ))
+                        target_type="self"
+                    )
+                    session.add(target)
+                elif key.startswith("friend_"):
+                    friend_id = int(key.split("_")[1])
+                    target = InvoiceTopupTargets(
+                        invoice_id=invoice_result.invoice.id,
+                        target_type="friend",
+                        friend_user_id=friend_id
+                    )
+                    session.add(target)
+                    
+            # SQLAlchemy автоматически сделает commit здесь при выходе из context manager
+    # === КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ===
+
 
     # ---------------------------------------------------------
     # 4. Show payment button

@@ -22,7 +22,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 def _verify_secret(provided: str | None) -> bool:
     if not WEBHOOK_SECRET or not provided:
         return False
-    return hmac.compare_digest(provided, WEBHOOK_SECRET)
+    return hmac.compare_digest(str(provided), WEBHOOK_SECRET)
 
 
 @router.post("/webhook/invoice")
@@ -67,8 +67,8 @@ async def invoice_webhook(request: Request):
                 invoice.invoice_updated_at = now_dt
                 session.add(invoice)
 
-    # The invoice processor owns all business processing. The webhook only marks paid.
-    await create_pg_event("invoice_paid", {"invoice_id": str(invoice_id)})
+                # The invoice processor owns all business processing. The webhook only marks paid.
+                await create_pg_event("invoice_paid", {"invoice_id": str(invoice_id)})
     return {"status": "already_paid" if already_paid else "accepted"}
 
 

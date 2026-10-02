@@ -47,19 +47,35 @@ class BitpapaService:
         assert last_exc is not None
         raise last_exc
 
+    # async def create_invoice(
+    #     self,
+    #     currency_code: str,
+    #     amount: float,
+    # ):
+    #     if self._client is None:
+    #         # защитный вариант: инициализируем на лету, если забыли вызвать init
+    #         await self.init()
+
+    #     async def _call():
+    #         return await self._client.create_invoice(currency_code, amount)
+
+    #     return await self._with_retry(_call, operation_name="create_invoice")
+
     async def create_invoice(
         self,
         currency_code: str,
-        amount: float,
+        amount_cents: int,  # Явно переименовываем, чтобы подчеркнуть, что на вход прилетают центы
     ):
         if self._client is None:
-            # защитный вариант: инициализируем на лету, если забыли вызвать init
             await self.init()
-
+            
+        # ПЕРЕВОДИМ ЦЕНТЫ В ДОЛЛАРЫ ДЛЯ ВНЕШНЕГО API BITPAPA
+        amount_usd = float(amount_cents) / 100.0
+        
         async def _call():
-            return await self._client.create_invoice(currency_code, amount)
-
+            return await self._client.create_invoice(currency_code, amount_usd)
         return await self._with_retry(_call, operation_name="create_invoice")
+
 
     async def close(self) -> None:
         if self._client is not None:

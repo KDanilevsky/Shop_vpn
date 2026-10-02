@@ -7,6 +7,7 @@
 import logging
 import os
 from datetime import datetime, timezone
+import math
 
 import qrcode
 from sqlalchemy import select, and_
@@ -58,13 +59,17 @@ def _add_one_month(dt: datetime) -> datetime:
 
 
 def _compute_new_end_ms(base_start_ms: int) -> int:
-    if SUBS_PERIOD_DAYS and SUBS_PERIOD_DAYS > 0:
-        period_ms = SUBS_PERIOD_DAYS * 24 * 60 * 60 * 1000
-        return base_start_ms + period_ms
+    days = SUBS_PERIOD_DAYS if (SUBS_PERIOD_DAYS and SUBS_PERIOD_DAYS > 0) else 30
+    return base_start_ms + (days * 24 * 60 * 60 * 1000)
 
-    base_dt = datetime.fromtimestamp(base_start_ms / 1000, tz=timezone.utc)
-    new_dt = _add_one_month(base_dt)
-    return int(new_dt.timestamp() * 1000)
+# def _compute_new_end_ms(base_start_ms: int) -> int:
+#     if SUBS_PERIOD_DAYS and SUBS_PERIOD_DAYS > 0:
+#         period_ms = SUBS_PERIOD_DAYS * 24 * 60 * 60 * 1000
+#         return base_start_ms + period_ms
+
+#     base_dt = datetime.fromtimestamp(base_start_ms / 1000, tz=timezone.utc)
+#     new_dt = _add_one_month(base_dt)
+#     return int(new_dt.timestamp() * 1000)
 
 
 async def _find_client_on_server(async_api: AsyncApi, new_client_email: str):
@@ -336,7 +341,8 @@ async def provision_subscription_for_user(tx_id: int) -> dict:
                     if external_id:
                         now_ms_local = int(_now_dt().timestamp() * 1000)
                         ms_diff = max(new_end_ms - now_ms_local, 0)
-                        days_to_extend = max(ms_diff // (24 * 60 * 60 * 1000), 1)
+                        # days_to_extend = max(ms_diff // (24 * 60 * 60 * 1000), 1)
+                        days_to_extend = max(math.ceil(ms_diff / (24 * 60 * 60 * 1000)), 1)
                         await update_existing_3xui_client(api, inbounds, client_email, days_to_extend)
                     else:
                         await add_client_to_3xui_server(api, client_email, new_end_ms, user_id)

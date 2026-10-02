@@ -44,24 +44,24 @@ async def about_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #     )
 
 
-async def about_callback_router(update, context):
+async def about_callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
     if data == "pluses":
         # await query.answer()
-        await pluses(query, context)
+        await pluses(update, context)
 
 
     elif data == "free":
         # await query.answer()
-        await free(query, context)
+        await free(update, context)
     elif data == "usl":
         # await query.answer()
-        await usloviya(query, context)
+        await usloviya(update, context)
     elif data == "ref":
-        await referal_link(query, context)
+        await referal_link(update, context)
         # await query.edit_message_caption("Реферальная сылка...", reply_markup=None)
 
     # elif data.startswith("back:"):
@@ -87,7 +87,8 @@ async def pluses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("Назад", callback_data="back:about")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+    query = update.callback_query
+    await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
 
 
 async def free(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,7 +102,8 @@ async def free(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     # await update.message.reply_text(text)
     # await update.message.edit_text(text=text, reply_markup=reply_markup, parse_mode="html")
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+    query = update.callback_query
+    await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
 
 
 async def usloviya(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,14 +117,15 @@ async def usloviya(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     # await update.message.reply_text(text)
     # await update.message.edit_text(text=text, reply_markup=reply_markup, parse_mode="html")
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+    query = update.callback_query
+    await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
 
 
 async def referal_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     bot = context.bot
     # bot = Bot.initialize(TELEGRAM_TOKEN)
     # print(await bot)
-    cont = str(update.from_user.id)
+    cont = str(update.effective_user.id)
     url = helpers.create_deep_linked_url(bot.username, str(cont), group=False)
     # text = f"Бесплатный доступ в интернет без границ на 5 дней NoBordersShop:\n\n {url} \n"
     text = (
@@ -138,4 +141,5 @@ async def referal_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     # await update.message.reply_text(f'{text}', reply_markup=keyboard)
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+    query = update.callback_query
+    await query.edit_message_caption(caption=text, reply_markup=reply_markup, parse_mode="html")

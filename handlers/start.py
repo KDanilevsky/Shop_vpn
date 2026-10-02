@@ -249,9 +249,10 @@ async def handle_start_with_payfor(update: Update, context: ContextTypes.DEFAULT
             await message.reply_text("Пользователь не найден.")
             return
 
+        tg_id = update.effective_user.id
         result = await session.execute(
             select(func.count(FriendlyAccount.id)).where(
-                FriendlyAccount.owner_user_id == message.from_user.id
+                FriendlyAccount.owner_user_id == tg_id
             )
         )
         count = result.scalar_one()
@@ -334,12 +335,12 @@ async def handle_start_with_invite(update: Update, context: ContextTypes.DEFAULT
                 )
 
             # If user exists but has no inviter → set inviter
-            # invited_user.user_id_who_invited = inviter_id
-            # await session.commit()
+            invited_user.user_id_who_invited = inviter_id
+            await session.commit()
 
-            # return await message.reply_text(
-            #     f"Вы успешно присоединились по приглашению от {inviter.full_name}!"
-            # )
+            return await message.reply_text(
+                f"Вы успешно присоединились по приглашению от {inviter.user_full_name}!"
+            )
 
         # 5. New user → create with inviter
         # We reuse your existing logic

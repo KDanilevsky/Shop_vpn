@@ -75,18 +75,29 @@ async def settings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     bot = context.bot
-    text = "Установите приложения для своего устройства из списка на фото:\n"
-    await update.message.reply_text(f'{text}')
-    await bot.send_document(chat_id=update.message.chat_id, document=open('prilogeniya.jpg', 'rb'))
-    text = ("Нажмите на плюс в правом верхнем углу приложения:\n"
-            "Выберите пункт - Считать Qr код\n"
-            "Наведите на полученный Qr код\n"
-            "Разрешите изменение сетевых настроек\n\n"
-            "Запускайте и Выключайте сервис через кнопку в приложении\n")
+    chat_id = update.effective_chat.id
+    
+    text_intro = "Установите приложения для своего устройства из списка на фото:\n"
+    await bot.send_message(chat_id=chat_id, text=text_intro)
+    
+    photo_path = os.path.join(ASSETS_DIR, "prilogeniya.jpg")
+    with open(photo_path, 'rb') as f:
+        await bot.send_document(chat_id=chat_id, document=f)
+        
+    text_instruction = ("Нажмите на плюс в правом верхнем углу приложения:\n"
+                        "Выберите пункт - Считать Qr код\n"
+                        "Наведите на полученный Qr код\n"
+                        "Разрешите изменение сетевых настроек\n\n"
+                        "Запускайте и Выключайте сервис через кнопку в приложении\n")
+                        
     keyboard = [
         [InlineKeyboardButton("Главное меню", callback_data="back:settings")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
             
-    # await update.message.reply_text(f'{text}')
-    await update.message.edit_caption(caption=text, reply_markup=reply_markup, parse_mode="html")
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text_instruction,
+        reply_markup=reply_markup,
+        parse_mode="html"
+    )

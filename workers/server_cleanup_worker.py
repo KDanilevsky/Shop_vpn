@@ -39,15 +39,36 @@ async def _delete_client_on_server(server_id: int, client_email: str) -> bool:
     )
     try:
         await api.login()
+        # for inbound in await api.inbound.get_list():
+        #     settings = getattr(inbound, "settings", None)
+        #     for client in list(getattr(settings, "clients", None) or []):
+        #         if getattr(client, "email", None) == client_email:
+        #             await api.client.delete(inbound.id, client.id)
+        #             logger.info("Deleted client %s from server %s", client_email, server_id)
+        #             return True
+        # logger.info("Client %s is already absent from server %s", client_email, server_id)
+        # return True
+
+        target_inbound_id = None
+        target_client_id = None
+
+        # Шаг 1: Только ищем координаты клиента, ничего не удаляя внутри итерации
         for inbound in await api.inbound.get_list():
             settings = getattr(inbound, "settings", None)
-            for client in list(getattr(settings, "clients", None) or []):
+            for client in (getattr(settings, "clients", None) or []):
                 if getattr(client, "email", None) == client_email:
-                    await api.client.delete(inbound.id, client.id)
-                    logger.info("Deleted client %s from server %s", client_email, server_id)
-                    return True
-        logger.info("Client %s is already absent from server %s", client_email, server_id)
-        return True
+                    target_inbound_id = inbound.id
+                    target_client_id = client.id
+                    break
+            if target_client_id:
+                break
+
+        # Шаг 2: Удаляем за пределами циклов итерации
+        if target_inbound_id and target_client_id:
+            await api.client.delete(target_inbound_id, target_client_id)
+            logger.info("Deleted client %s from server %s", client_email, server_id)
+            return True
+
     finally:
         close = getattr(api, "close", None)
         if close:
