@@ -9,6 +9,7 @@ from db.async_db import SessionLocal
 from db.models import AllInvoices
 from services.events import create_pg_event
 from services.bitpapa import BitpapaService
+from services.cryptomus import CryptomusService
 
 from services.heartbeat import heartbeat
 
@@ -70,22 +71,63 @@ async def _sync_invoice(session, db_inv, bitpapa_inv):
 #         await create_pg_event("tx", db_inv.tx_id, session=session)
 
 
-async def _process_bitpapa_invoices(bitpapa_service: BitpapaService):
-    """Full reconciliation pass."""
-    invoices = await bitpappa_get_invoices(bitpapa_service)
-    bitpapa_map = {inv.id: inv for inv in invoices}
+# async def _process_bitpapa_invoices(bitpapa_service: BitpapaService):
+#     """Full reconciliation pass."""
+#     invoices = await bitpappa_get_invoices(bitpapa_service)
+#     bitpapa_map = {inv.id: inv for inv in invoices}
+
+#     async with SessionLocal() as session:
+#         async with session.begin():
+#             db_invoices = await _fetch_unfinished_invoices(session)
+
+#             for db_inv in db_invoices:
+#                 inv = bitpapa_map.get(db_inv.invoice_id)
+#                 if inv:
+#                     await _sync_invoice(session, db_inv, inv)
+
+# workers/bitpappa_invoice_reconciller.py
+
+async def _process_bitpapa_invoices(bitpapa_service: BitpapaService, cryptomus_service: CryptomusService):
+    """Полный цикл сверки для всех платежных систем."""
+    # 1. Запрашиваем пакетный список инвойсов у Bitpapa (как и раньше)
+    bitpapa_invoices = await bitpappa_get_invoices(bitpapa_service)
+    bitpapa_map = {inv.id: inv for inv in bitpapa_invoices}
 
     async with SessionLocal() as session:
         async with session.begin():
+            # Получаем все незавершенные инвойсы из БД
             db_invoices = await _fetch_unfinished_invoices(session)
-
+            
             for db_inv in db_invoices:
-                inv = bitpapa_map.get(db_inv.invoice_id)
-                if inv:
-                    await _sync_invoice(session, db_inv, inv)
+                source = getattr(db_inv, "invoice_source", "bitpapa") or "bitpapa"
+                
+                # --- ВЕТКА CRYPTOMUS (Точечная проверка статуса через API) ---
+                if source == "cryptomus":
+                    try:
+                        # Наш новый метод из services/cryptomus.py
+                        res = await cryptomus_service.check_status(db_inv.invoice_id)
+                        if res and res.get("is_paid"):
+                            logger.info(
+                                "Fallback Reconciller: Обнаружен оплаченный инвойс Cryptomus %s через API", 
+                                db_inv.invoice_id
+                            )
+                            # Имитируем структуру объекта инвойса для повторного использования _sync_invoice
+                            # (у Cryptomus статус успешной оплаты в info возвращается как 'paid')
+                            class CryptomusMockInv:
+                                status = "paid"
+                            
+                            await _sync_invoice(session, db_inv, CryptomusMockInv())
+                    except Exception as e:
+                        logger.error("Ошибка при аварийной проверке инвойса Cryptomus %s: %s", db_inv.invoice_id, e)
+                
+                # --- ВЕТКА BITPAPA (Пакетное сопоставление из карты) ---
+                else:
+                    inv = bitpapa_map.get(db_inv.invoice_id)
+                    if inv:
+                        await _sync_invoice(session, db_inv, inv)
 
 
-async def bitpappa_invoice_reconciller(bitpapa_service: BitpapaService):
+async def bitpappa_invoice_reconciller(bitpapa_service: BitpapaService, cryptomus_service: CryptomusService):
     """Main worker loop."""
     logger.info("Bitpapa invoice reconciller started")
 
@@ -100,7 +142,7 @@ async def bitpappa_invoice_reconciller(bitpapa_service: BitpapaService):
 
             bitpappa_event.clear()
 
-            await _process_bitpapa_invoices(bitpapa_service)
+            await _process_bitpapa_invoices(bitpapa_service, cryptomus_service)
 
         except Exception:
             logger.exception("bitpappa_invoice_reconciller failed")

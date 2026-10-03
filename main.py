@@ -12,8 +12,9 @@ from telegram.ext import (
 
 from services.helpers import init_servers_cache, ServersSettings
 from services.listener import PgListener
-from config import DATABASE_URL_PG, DATABASE_URL_PG_PG, TELEGRAM_TOKEN, PAYMENT_PROVIDER_TOKEN
+from config import DATABASE_URL_PG, DATABASE_URL_PG_PG, TELEGRAM_TOKEN, PAYMENT_PROVIDER_TOKEN, CRYPTOMUS_MERCHANT_ID, CRYPTOMUS_API_KEY
 from services.bitpapa import BitpapaService
+from services.cryptomus import CryptomusService
 from services.subscriptions import register_subscription_handlers
 from services.events import on_event
 
@@ -98,6 +99,13 @@ def main():
         max_retries=3,
         base_delay=1.0,
     )
+
+    # Сохраняем единственный экземпляр CryptomusService на все приложение в bot_data
+    app. bot_data["cryptomus_service"] = CryptomusService(
+        merchant_id=CRYPTOMUS_MERCHANT_ID,
+        api_key=CRYPTOMUS_API_KEY
+    )
+    logger.info("CryptomusService успешно добавлен в bot_data приложения.")
 
     # --- РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ КОМАНД И ДИАЛОГОВ ---
     app.add_handler(CommandHandler("start", start))

@@ -20,10 +20,8 @@ from db.models import (
 )
 from services.provision import provision_subscription_for_user
 from services.exceptions import ProvisioningError, NoServerAvailableError
-from services.notifications import (
-    send_user_settings_string_and_qr_code_then_del_qr,
-    send_message_to_user,
-)
+from services.notifications import send_message_to_user
+
 from utils.advisory_locks import acquire_tx_lock, release_tx_lock
 from config import FIRST_USER_IN_DB, STANDART_PARTNER_PROCENT, DISCOUNT_BASE_PROCENTS
 
@@ -319,11 +317,11 @@ async def process_tx(tx_id: int) -> None:
                     # --- CHAST' 1: OBNOVLENIE i DOBAVLENIE SLOTOV V SUBD ---
                     slots = provision_result.get("slots") or {}
                     for slot_str, info in slots.items():
-                        acc_num = int(slot_str)
+                        slot_num = int(slot_str)
                         existing_sub = await session2.execute(
                             select(UserSubscription).where(
                                 UserSubscription.user_id == tx2.user_id,
-                                UserSubscription.acc_number == acc_num
+                                UserSubscription.slot_number == slot_num
                             )
                         )
                         sub_obj = existing_sub.scalar_one_or_none()
@@ -336,7 +334,7 @@ async def process_tx(tx_id: int) -> None:
                         else:
                             sub_obj = UserSubscription(
                                 user_id=tx2.user_id,
-                                acc_number=acc_num,
+                                slot_number=slot_num,
                                 tariff_id=tx2.payload_meta.get("tariff_id"),
                                 sub_id=info.get("sub_id_token"),       # Novyj UUID dlya 3x-ui link
                                 client_uuid=info.get("client_uuid"),   # ID klienta v Xray
@@ -456,7 +454,7 @@ async def process_tx(tx_id: int) -> None:
                             for it in items2 or []:
                                 refund_meta.append(
                                     {
-                                        "acc_number": it.acc_number,
+                                        "slot_number": it.slot_number,
                                         "server_country_id": getattr(it, "server_country_id", None),
                                     }
                                 )
@@ -471,7 +469,7 @@ async def process_tx(tx_id: int) -> None:
 
                         # --- QR cleanup on permanent failure ---
                         # for it in items2:
-                        #     slot = it.acc_number
+                        #     slot = it.slot_number
 
                         #     r_sub = await session2.execute(
                         #         select(UserSubscription).where(

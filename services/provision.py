@@ -147,13 +147,14 @@ async def provision_subscription_for_user(tx_id: int) -> Dict[str, Any]:
         client_spec = {
             "id": client_uuid,
             "email": client_email,
-            "limitIp": tariff.device_limit,
-            "totalGB": total_bytes,
+            "limitIp": tx.payload_meta.get("device_limit", 1), # Читаем из метаданных tx
+            "totalGB": tx.payload_meta.get("gb_limit", 0) * 1024 * 1024 * 1024,
             "expiryTime": expiry_time_ms,
             "enable": True,
             "tgId": str(user.user_id),
             "subId": sub_id_token
         }
+
 
         # 4. Sinhroniziruem klienta s panel'yu 3x-ui
         success = await xui_master.add_or_update_client(client_spec, inbound_ids, is_update=is_update)
