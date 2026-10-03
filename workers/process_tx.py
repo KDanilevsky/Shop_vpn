@@ -25,7 +25,7 @@ from services.notifications import (
     send_message_to_user,
 )
 from utils.advisory_locks import acquire_tx_lock, release_tx_lock
-from config import FIRST_USER_IN_DB, STANDART_PARTNER_PROCENT
+from config import FIRST_USER_IN_DB, STANDART_PARTNER_PROCENT, DISCOUNT_BASE_PROCENTS
 
 logger = logging.getLogger(__name__)
 logger = logging.LoggerAdapter(logger, {"worker": "process_tx"})
@@ -316,7 +316,45 @@ async def process_tx(tx_id: int) -> None:
                 items2 = r_items2.scalars().all()
 
                 if provision_success:
-                    # SUCCESS: split frozen_amount to admin/partner, zero it
+                    # --- CHAST' 1: OBNOVLENIE i DOBAVLENIE SLOTOV V SUBD ---
+                    slots = provision_result.get("slots") or {}
+                    for slot_str, info in slots.items():
+                        acc_num = int(slot_str)
+                        existing_sub = await session2.execute(
+                            select(UserSubscription).where(
+                                UserSubscription.user_id == tx2.user_id,
+                                UserSubscription.acc_number == acc_num
+                            )
+                        )
+                        sub_obj = existing_sub.scalar_one_or_none()
+                        if sub_obj:
+                            sub_obj.tariff_id = tx2.payload_meta.get("tariff_id")
+                            sub_obj.stop_time = info.get("stop_time")
+                            sub_obj.is_active = True
+                            sub_obj.gb_limit = tx2.payload_meta.get("gb_limit", 0)
+                            sub_obj.device_limit = tx2.payload_meta.get("device_limit", 1)
+                        else:
+                            sub_obj = UserSubscription(
+                                user_id=tx2.user_id,
+                                acc_number=acc_num,
+                                tariff_id=tx2.payload_meta.get("tariff_id"),
+                                sub_id=info.get("sub_id_token"),       # Novyj UUID dlya 3x-ui link
+                                client_uuid=info.get("client_uuid"),   # ID klienta v Xray
+                                gb_limit=tx2.payload_meta.get("gb_limit", 0),
+                                device_limit=tx2.payload_meta.get("device_limit", 1),
+                                start_time=_now_dt(),
+                                stop_time=info.get("stop_time"),
+                                is_active=True
+                            )
+                            session2.add(sub_obj)
+
+                    tx2.payload_meta = {
+                        **tx2.payload_meta,
+                        "subscription_links": {k: v["settings_string"] for k, v in slots.items()}
+                    }
+
+                    # --- CHAST' 2: FINANSOVAY LOGIKA I RASCHET PARTNERKI (VASH ORIGINAL'NYJ KOD) ---
+                    frozen_cents = int(tx2.frozen_amount or 0)
                     if frozen_cents <= 0:
                         tx2.status = "completed"
                         tx2.error = None
@@ -324,14 +362,17 @@ async def process_tx(tx_id: int) -> None:
                         await session2.flush()
                         logger.info("tx %s completed with zero frozen amount", tx_id)
                     else:
+                        inviter_share = 0
                         partner_share = 0
                         admin_share = frozen_cents
 
-                        if inviter2 and STANDART_PARTNER_PROCENT and STANDART_PARTNER_PROCENT > 0:
-                            # partner_share = frozen_cents * int(STANDART_PARTNER_PROCENT) // 100
-                            # ИСПРАВЛЕНО: Безопасный расчет долей в центах без потерь копеек
+                        if inviter2 and DISCOUNT_BASE_PROCENTS and DISCOUNT_BASE_PROCENTS > 0:
+                            inviter_share = int(round((frozen_cents * float(DISCOUNT_BASE_PROCENTS)) / 100.0))
+                            admin_share = admin_share - inviter_share
+
+                        if inviter2 and STANDART_PARTNER_PROCENT and STANDART_PARTNER_PROCENT > 0  and inviter2.is_partner is True:
                             partner_share = int(round((frozen_cents * float(STANDART_PARTNER_PROCENT)) / 100.0))
-                            admin_share = frozen_cents - partner_share
+                            admin_share = admin_share - partner_share
 
                         r_admin = await session2.execute(
                             select(AllUsers)
@@ -351,9 +392,21 @@ async def process_tx(tx_id: int) -> None:
                             )
                             session2.add(admin_tx)
 
+                        if inviter_share > 0 and inviter2:
+                            inviter2.user_balance = (inviter2.user_balance or 0) + inviter_share
+                            inviter2.quantity_guests_paid = (inviter2.quantity_guests_paid or 0) + 1
+                            session2.add(inviter2)
+                            inviter_tx = AllTransactions(
+                                user_id=inviter2.user_id,
+                                trans_time=int(_now_dt().timestamp() * 1000),
+                                trans_ammount=inviter_share,
+                                trans_target="inviter_payout_on_activation",
+                            )
+                            session2.add(inviter_tx)
+
                         if partner_share > 0 and inviter2:
                             inviter2.partner_balance = (inviter2.partner_balance or 0) + partner_share
-                            inviter2.quantity_guests_paid = (inviter2.quantity_guests_paid or 0) + 1
+                            # inviter2.quantity_guests_paid = (inviter2.quantity_guests_paid or 0) + 1
                             session2.add(inviter2)
                             partner_tx = AllTransactions(
                                 user_id=inviter2.user_id,
@@ -369,23 +422,14 @@ async def process_tx(tx_id: int) -> None:
                         tx2.updated_at = _now_dt()
                         await session2.flush()
 
-                    # User notifications
-                    slots = {}
-                    if isinstance(provision_result, dict):
-                        slots = provision_result.get("slots") or {}
-
+                    # --- CHAST' 3: UPRAVLENIE NOTIFIKACIYAMI POL'ZOVATELYAM ---
                     try:
                         for slot_str, info in slots.items():
                             settings_string = info.get("settings_string")
-                            img_path = info.get("img_path")
                             if settings_string:
-                                asyncio.create_task(
-                                    send_user_settings_string_and_qr_code_then_del_qr(
-                                        user2.user_id,
-                                        settings_string,
-                                        img_path,
-                                    )
-                                )
+                                # Otpravlyaem chistyj tekst s ssylkoj podpiski vmesto kartinki
+                                text = f"Vasha podpiska dlya Slota #{slot_str} aktivirovana!\n\nSsylka dlya importa v prilozhenie:\n<code>{settings_string}</code>"
+                                asyncio.create_task(send_message_to_user(user2.user_id, text))
                         if not slots:
                             text = "Ваша подписка активирована."
                             asyncio.create_task(send_message_to_user(user2.user_id, text))
@@ -393,6 +437,7 @@ async def process_tx(tx_id: int) -> None:
                         logger.exception("Failed to schedule user notifications for tx %s", tx_id)
 
                     logger.info("tx %s completed, frozen=%s", tx_id, frozen_cents)
+
 
                 else:
                     # FAILURE: decide retry vs permanent, refund only on permanent
@@ -425,31 +470,31 @@ async def process_tx(tx_id: int) -> None:
                             session2.add(refund_tx)
 
                         # --- QR cleanup on permanent failure ---
-                        for it in items2:
-                            slot = it.acc_number
+                        # for it in items2:
+                        #     slot = it.acc_number
 
-                            r_sub = await session2.execute(
-                                select(UserSubscription).where(
-                                    UserSubscription.user_id == user2.user_id,
-                                    UserSubscription.slot_number == slot,
-                                )
-                            )
-                            sub = r_sub.scalar_one_or_none()
-                            if not sub:
-                                continue
+                        #     r_sub = await session2.execute(
+                        #         select(UserSubscription).where(
+                        #             UserSubscription.user_id == user2.user_id,
+                        #             UserSubscription.slot_number == slot,
+                        #         )
+                        #     )
+                        #     sub = r_sub.scalar_one_or_none()
+                        #     if not sub:
+                        #         continue
 
-                            # Delete QR file if exists
-                            if sub.qr_path and os.path.exists(sub.qr_path):
-                                try:
-                                    os.remove(sub.qr_path)
-                                    logger.info("Deleted QR %s due to permanent failure", sub.qr_path)
-                                except Exception:
-                                    logger.exception("Failed to delete QR %s on refund", sub.qr_path)
+                        #     # Delete QR file if exists
+                        #     if sub.qr_path and os.path.exists(sub.qr_path):
+                        #         try:
+                        #             os.remove(sub.qr_path)
+                        #             logger.info("Deleted QR %s due to permanent failure", sub.qr_path)
+                        #         except Exception:
+                        #             logger.exception("Failed to delete QR %s on refund", sub.qr_path)
 
-                            # Clear subscription QR fields
-                            sub.qr_path = None
-                            sub.settings_string = None
-                            session2.add(sub)
+                        #     # Clear subscription QR fields
+                        #     sub.qr_path = None
+                        #     sub.settings_string = None
+                        #     session2.add(sub)
 
                         tx2.status = "failed_permanent"
                         await session2.flush()

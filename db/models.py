@@ -205,17 +205,40 @@ class UserSubscription(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("all_users.user_id"), nullable=False)
+
+    acc_number = Column(Integer, nullable=False)
+    tariff_id = Column(Integer, ForeignKey("all_tariffs.id"), nullable=False)
+
+    # Поле для хранения отложенного даунгрейда тарифа (применится при автопродлении)
+    next_tariff_id = Column(Integer, ForeignKey("all_tariffs.id"), nullable=True)
+
+    # === ИСПРАВЛЕННЫЕ ПОЛЯ ПОД МАСТЕР 3X-UI ===
+    sub_id = Column(String(255), unique=True, index=True, nullable=False)     # UUID токен для ссылки подписки
+    client_uuid = Column(String(255), unique=True, nullable=False)  # Внутренний ID клиента в Xray
+    
+    # Слепок текущих лимитов для вывода в меню бота
+    gb_limit = Column(Integer, nullable=False, default=0)
+    device_limit = Column(Integer, nullable=False, default=1)
+
     slot_number = Column(Integer, nullable=False)  # 1-5
-    server_country_id = Column(Integer, nullable=True)
-    server_id = Column(Integer, nullable=True)
+    # server_country_id = Column(Integer, nullable=True)
+    # server_id = Column(Integer, nullable=True)
     autopay_id = Column(Integer, nullable=False, default=0)
-    stop_time = Column(BigInteger, nullable=True)  # timestamp in ms
-    next_server_id = Column(Integer, default=0)
-    pending = Column(Boolean, default=False)
-    settings_string = Column(String, nullable=True)
-    qr_path = Column(String, nullable=True)
+
+    # Статусы и даты
+    start_time = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
+    stop_time = Column(TIMESTAMP(timezone=True), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=now_ts)
+
+    # stop_time = Column(BigInteger, nullable=True)  # timestamp in ms
+    # next_server_id = Column(Integer, default=0)
+    # pending = Column(Boolean, default=False)
+    # settings_string = Column(String, nullable=True)
+    # qr_path = Column(String, nullable=True)
 
     user = relationship("AllUsers", backref="subscriptions", lazy="selectin")
+    tariff = relationship("AllTariffs", foreign_keys=[tariff_id], lazy="selectin")
 
 # db/models.py
 

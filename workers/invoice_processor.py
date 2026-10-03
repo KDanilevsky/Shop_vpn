@@ -98,6 +98,7 @@ async def _create_subscription_tx(session, invoice, user, items, subs_cost):
         frozen_amount=subs_cost,
         payload_meta={
             "invoice_id": invoice.invoice_id,
+            "tariff_id": invoice.tariff_id,  # ДОБАВЛЕНО: передаем ID тарифа для provision.py
             "invoice_amount": int(invoice.invoice_ammount or 0),
             "subscription_cost": subs_cost,
             "items": [
@@ -111,6 +112,7 @@ async def _create_subscription_tx(session, invoice, user, items, subs_cost):
             ],
         },
     )
+
     session.add(tx)
     await session.flush()
     return int(tx.id)

@@ -105,3 +105,7 @@ XUI_SUB_DOMAIN = os.getenv("XUI_SUB_DOMAIN", "https://master-server.com:2096")
 # === НАСТРОЙКИ ПЛАТЕЖНОЙ СИСТЕМЫ CRYPTOMUS ===
 CRYPTOMUS_MERCHANT_ID = os.getenv("CRYPTOMUS_MERCHANT_ID", "your_merchant_id_here")
 CRYPTOMUS_API_KEY = os.getenv("CRYPTOMUS_API_KEY", "your_payment_api_key_here")
+
+# === ИСКЛЮЧЕНИЯ ТЕХНИЧЕСКИХ ИНБАУНДОВ ===
+# Добавьте сюда ID инбаундов через запятую, которые НЕ ДОЛЖНЫ выдаваться пользователям
+EXCLUDED_INBOUND_IDS = [int(x) for x in os.getenv("EXCLUDED_INBOUND_IDS", "1,5").split(",")]  # Например, 1 и 5 — технические
